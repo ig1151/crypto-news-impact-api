@@ -21,6 +21,11 @@ export interface NewsImpactResponse {
   action_bias: 'buy' | 'sell' | 'hold' | 'watch';
   confidence: number;
   event_type: 'regulation' | 'listing' | 'exploit' | 'institutional' | 'other';
+  consensus: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+  articles_analyzed: number;
+  freshness: 'breaking' | 'recent' | 'stale';
+  time_decay_hours: number;
+  risk_warning: string | null;
   drivers: string[];
   watch_items: string[];
   analyzedAt: string;
