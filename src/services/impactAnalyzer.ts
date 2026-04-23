@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { NewsImpactRequest, NewsImpactResponse } from '../types';
 
-const client = new Anthropic();
+const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const MODEL = 'anthropic/claude-sonnet-4-5';
 
 function calcFreshness(articles: { published_at?: string }[]): { freshness: 'breaking' | 'recent' | 'stale'; time_decay_hours: number } {
   const now = Date.now();
@@ -9,17 +9,17 @@ function calcFreshness(articles: { published_at?: string }[]): { freshness: 'bre
     .filter(a => a.published_at)
     .map(a => new Date(a.published_at!).getTime())
     .filter(t => !isNaN(t));
-
   if (timestamps.length === 0) return { freshness: 'recent', time_decay_hours: 24 };
-
   const newest = Math.max(...timestamps);
   const ageHours = (now - newest) / (1000 * 60 * 60);
-
   const freshness = ageHours < 2 ? 'breaking' : ageHours < 24 ? 'recent' : 'stale';
   return { freshness, time_decay_hours: Math.round(ageHours) };
 }
 
 export async function analyzeNewsImpact(input: NewsImpactRequest): Promise<NewsImpactResponse> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
+
   const articlesText = input.articles.map((a, i) => {
     return `Article ${i + 1}:
 Title: ${a.title}
@@ -30,10 +30,8 @@ ${a.url ? `URL: ${a.url}` : ''}`;
   }).join('\n\n');
 
   const prompt = `You are a crypto market analyst. Analyze the following ${input.articles.length} news article(s) about ${input.asset}${input.topic ? ` related to "${input.topic}"` : ''} and return a JSON market impact assessment.
-
 Articles:
 ${articlesText}
-
 Return ONLY a valid JSON object with exactly these fields:
 {
   "summary": "2-3 sentence summary of the news and its likely market impact",
@@ -48,7 +46,6 @@ Return ONLY a valid JSON object with exactly these fields:
   "drivers": ["2-4 specific reasons why this moves the market"],
   "watch_items": ["2-3 follow-up signals to monitor"]
 }
-
 Rules:
 - impact_score: 0-30 minor, 31-60 moderate, 61-80 significant, 81-100 major
 - impact_horizon: 1h for breaking/exploit news, 24h for daily impact, 7d for structural shifts
@@ -57,16 +54,27 @@ Rules:
 - risk_warning: flag high volatility, low liquidity, unconfirmed sources, or conflicting signals
 - Return ONLY the JSON object, no explanation, no markdown`;
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }]
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+    }),
   });
 
-  const content = message.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected response type from Claude');
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenRouter error: ${response.status} ${err}`);
+  }
 
-  const text = content.text.trim().replace(/```json|```/g, '').trim();
+  const data = await response.json() as { choices: { message: { content: string } }[] };
+  const text = data.choices[0].message.content.trim().replace(/```json|```/g, '').trim();
   const parsed = JSON.parse(text);
   const { freshness, time_decay_hours } = calcFreshness(input.articles);
 
