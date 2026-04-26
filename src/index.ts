@@ -9,6 +9,7 @@ import newsImpactRouter from './routes/newsImpact';
 import healthRouter from './routes/health';
 import docsRouter from './routes/docs';
 import openapiRouter from './routes/openapi';
+import newsSentimentRouter from './routes/newsSentiment';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,6 +23,7 @@ app.use(rateLimiter);
 
 app.use('/v1/health', healthRouter);
 app.use('/v1/news-impact', newsImpactRouter);
+app.use('/v1/news', newsSentimentRouter);
 app.use('/docs', docsRouter);
 app.use('/openapi.json', openapiRouter);
 
